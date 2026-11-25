@@ -1,0 +1,115 @@
+# Full stack: traffic generator -> switch (regional delay/loss) -> L4 load balancer -> backend pool,
+# plus the churn injector. Run one experiment:
+#
+#   POLICY=consistent POOL_SIZE=5 ZIPF_ALPHA=1.2 CHURN_INTERVAL=5s DURATION=60s \
+#   docker compose -f docker-compose.lb.yml up --build --abort-on-container-exit --exit-code-from trafficgen
+#
+# (PowerShell: $env:POLICY="consistent"; $env:ZIPF_ALPHA="1.2"; ...; docker compose -f ... up ...)
+# Or run the whole matrix with:  python scripts/run_sweep.py --mode docker
+#
+# Results (gen.csv, lb.csv, pool.csv, backend.csv, churn.csv) go to $RESULTS_DIR (default ./results).
+name: acnlb-lb
+
+x-image: &image
+  image: acnlb:dev
+  build:
+    context: .
+    dockerfile: Dockerfile
+
+services:
+  backends:
+    <<: *image
+    command: ["backend"]
+    environment:
+      BACKEND_MAX: "10"
+      SERVICE_TIME: ${SERVICE_TIME:-30ms}
+    volumes:
+      - ${RESULTS_DIR:-./results}:/results
+    networks:
+      server-net:
+        ipv4_address: 10.20.0.30
+
+  lb:
+    <<: *image
+    command: ["lb"]
+    environment:
+      POLICY: ${POLICY:-rr}
+      POOL_SIZE: ${POOL_SIZE:-5}
+      BACKEND_MAX: "10"
+      BACKEND_HOST: 10.20.0.30
+    volumes:
+      - ${RESULTS_DIR:-./results}:/results
+    networks:
+      server-net:
+        ipv4_address: 10.20.0.10     # the address the switch already forwards to
+    depends_on:
+      - backends
+
+  switch:
+    <<: *image
+    command: ["switch"]
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+    networks:
+      client-net:
+        ipv4_address: 10.10.0.2
+      server-net:
+        ipv4_address: 10.20.0.2
+    depends_on:
+      - lb
+
+  churn:
+    <<: *image
+    command: ["churn"]
+    environment:
+      CHURN_INTERVAL: ${CHURN_INTERVAL:-0}
+      CHURN_WARMUP: ${CHURN_WARMUP:-5s}
+      DETECT_DELAY: ${DETECT_DELAY:-500ms}
+      LB_ADMIN: http://10.20.0.10:9100
+      BACKENDS_ADMIN: http://10.20.0.30:9200
+    volumes:
+      - ${RESULTS_DIR:-./results}:/results
+    networks:
+      server-net:
+        ipv4_address: 10.20.0.40
+    depends_on:
+      - lb
+
+  trafficgen:
+    <<: *image
+    command: >
+      sh -c "
+      for i in `seq 1 20`; do ip addr add 10.10.1.$$i/16 dev eth0 2>/dev/null || true; done;
+      for i in `seq 1 20`; do ip addr add 10.10.2.$$i/16 dev eth0 2>/dev/null || true; done;
+      for i in `seq 1 20`; do ip addr add 10.10.3.$$i/16 dev eth0 2>/dev/null || true; done;
+      for i in `seq 1 20`; do ip addr add 10.10.4.$$i/16 dev eth0 2>/dev/null || true; done;
+      trafficgen
+      "
+    cap_add:
+      - NET_ADMIN
+    environment:
+      ZIPF_ALPHA: ${ZIPF_ALPHA:-1.0}
+      DURATION: ${DURATION:-60s}
+      SEED: ${SEED:-42}
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+      - ${RESULTS_DIR:-./results}:/results
+    networks:
+      client-net:
+        ipv4_address: 10.10.0.10
+    depends_on:
+      - switch
+      - backends
+
+networks:
+  client-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.10.0.0/16
+          ip_range: 10.10.0.0/24
+  server-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.20.0.0/24
