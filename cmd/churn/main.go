@@ -23,7 +23,10 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"acnlb/internal/envx"
@@ -57,7 +60,10 @@ func main() {
 	interval := envx.Duration("CHURN_INTERVAL", 0)
 	if interval <= 0 {
 		log.Println("churn: disabled (CHURN_INTERVAL=0)")
-		select {}
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+		<-sig
+		return
 	}
 	warmup := envx.Duration("CHURN_WARMUP", 5*time.Second)
 	detect := envx.Duration("DETECT_DELAY", 500*time.Millisecond)
