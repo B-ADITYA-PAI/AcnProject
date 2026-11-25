@@ -1,0 +1,26 @@
+server:
+  id: server-1
+  tcp_port: 9000
+  udp_port: 9001
+  http_port: 8080
+
+switch:
+  client_ip: 10.10.0.2
+  server_ip: 10.20.0.10
+  tcp_loss_penalty: 200ms
+
+regions:
+  - { name: ap-south,     cidr: 10.10.1.0/24, clients: 20, delay: 2ms,   jitter: 1ms,  loss: 0.0   }
+  - { name: ap-southeast, cidr: 10.10.2.0/24, clients: 20, delay: 30ms,  jitter: 5ms,  loss: 0.005 }
+  - { name: eu-west,      cidr: 10.10.3.0/24, clients: 20, delay: 65ms,  jitter: 10ms, loss: 0.01  }
+  - { name: us-east,      cidr: 10.10.4.0/24, clients: 20, delay: 110ms, jitter: 15ms, loss: 0.02  }
+
+traffic:
+  duration: 60s
+  rate_per_region: 50
+  keys: 1000
+  zipf_alpha: 1.0
+  mix: { tcp: 0.5, udp: 0.3, http: 0.2 }
+  timeout: 2s
+  seed: 42
+  output: /results/gen.csv

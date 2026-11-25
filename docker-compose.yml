@@ -1,0 +1,61 @@
+name: acnlb
+
+services:
+  server:
+    image: acnlb:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["server"]
+    volumes:
+      - ./results:/results
+    networks:
+      server-net:
+        ipv4_address: 10.20.0.10
+
+  switch:
+    image: acnlb:dev
+    command: ["switch"]
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+    networks:
+      client-net:
+        ipv4_address: 10.10.0.2
+      server-net:
+        ipv4_address: 10.20.0.2
+    depends_on:
+      - server
+
+  trafficgen:
+    image: acnlb:dev
+    command: >
+      sh -c "
+      for i in `seq 1 20`; do ip addr add 10.10.1.$$i/16 dev eth0 2>/dev/null || true; done;
+      for i in `seq 1 20`; do ip addr add 10.10.2.$$i/16 dev eth0 2>/dev/null || true; done;
+      for i in `seq 1 20`; do ip addr add 10.10.3.$$i/16 dev eth0 2>/dev/null || true; done;
+      for i in `seq 1 20`; do ip addr add 10.10.4.$$i/16 dev eth0 2>/dev/null || true; done;
+      trafficgen
+      "
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+      - ./results:/results
+    networks:
+      client-net:
+        ipv4_address: 10.10.0.10
+    depends_on:
+      - switch
+
+networks:
+  client-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.10.0.0/16
+          ip_range: 10.10.0.0/24
+  server-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.20.0.0/24
