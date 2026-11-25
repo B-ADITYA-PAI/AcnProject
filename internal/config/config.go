@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -65,6 +66,8 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
+	applyEnvOverrides(&c)
+
 	for i := range c.Regions {
 		prefix, err := netip.ParsePrefix(c.Regions[i].CIDR)
 		if err != nil {
@@ -83,4 +86,30 @@ func (c *Config) Lookup(ip netip.Addr) *Region {
 		}
 	}
 	return nil
+}
+
+// applyEnvOverrides lets the experiment runner change the traffic settings per
+// run without editing config.yaml: ZIPF_ALPHA, DURATION (e.g. "60s"), SEED and
+// RATE_PER_REGION.
+func applyEnvOverrides(c *Config) {
+	if v := os.Getenv("ZIPF_ALPHA"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			c.Traffic.ZipfAlpha = f
+		}
+	}
+	if v := os.Getenv("DURATION"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			c.Traffic.Duration = d
+		}
+	}
+	if v := os.Getenv("SEED"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			c.Traffic.Seed = n
+		}
+	}
+	if v := os.Getenv("RATE_PER_REGION"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			c.Traffic.RatePerRegion = f
+		}
+	}
 }
